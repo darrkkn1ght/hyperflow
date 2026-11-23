@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>HyperFlow — Multi-Pipeline Parallel Settlement</title>
+  <meta name="description" content="HyperFlow Multi-Pipeline Settlement Engine for LagosLife. Connect multiple accounts, save presets, and send in parallel to one target.">
+  <meta name="theme-color" content="#fbfbfd">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="client.css?v=1.0">
+</head>
+<body>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <div class="vip-layout">
+
+    <!-- Top Header -->
+    <header class="vip-header">
+      <div class="brand-row">
+        <div class="vip-crown">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div>
+          <h1>HyperFlow <span class="vip-tag">Pipeline</span></h1>
+          <p class="vip-sub">Multi-Account Parallel Settlement</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button id="btn-open-donate" type="button" class="btn btn-secondary btn-mini" style="border-color:rgba(212,175,55,0.45);color:#b45309;font-weight:700;">
+          💛 Donate
+        </button>
+        <button id="btn-vault-backup" type="button" class="btn btn-secondary btn-mini">
+          Presets
+        </button>
+        <button id="btn-open-add-account" type="button" class="btn btn-gold btn-mini">
+          + Add Account
+        </button>
+      </div>
+    </header>
+
+    <!-- Selected Fleet Wealth Card -->
+    <div class="treasury-card glass-card">
+      <div class="treasury-header">
+        <span class="treasury-label">Selected Pipeline Capacity</span>
+        <span class="treasury-status"><span class="pulse-green"></span> <span id="selected-count-pill">0 Selected</span></span>
+      </div>
+      <div class="treasury-amount" id="fleet-selected-balance">₦0</div>
+      <div class="treasury-meta">
+        <span>Total Vault: <strong id="fleet-total-balance">₦0</strong> (<span id="fleet-account-count">0</span> accounts)</span>
+        <button id="btn-refresh-all" class="btn-refresh" type="button">Refresh Balances</button>
+      </div>
+    </div>
+
+    <!-- Connected & Saved Preset Accounts -->
+    <section class="glass-card" style="padding:18px 20px; margin-bottom:18px;">
+      <div class="fleet-toolbar">
+        <div>
+          <strong style="font-size:14px;">Sender Accounts (Saved Presets)</strong>
+          <p style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Check the accounts you want in this pipeline. Saved accounts auto-restore on reload.</p>
+        </div>
+        <div class="fleet-toolbar-actions">
+          <button type="button" id="btn-select-all" class="btn btn-secondary btn-mini">All</button>
+          <button type="button" id="btn-select-funded" class="btn btn-secondary btn-mini">Funded</button>
+          <button type="button" id="btn-select-none" class="btn btn-secondary btn-mini">None</button>
+        </div>
+      </div>
+
+      <div id="fleet-list" class="fleet-list">
+        <div class="empty-state" style="padding:20px 10px;">
+          <p>No sender accounts connected yet. Click <strong>+ Add Account</strong> to log in your first account.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Pipeline Send Card -->
+    <section class="action-card glass-card">
+      <div class="mode-switcher" style="grid-template-columns: repeat(3, 1fr);">
+        <button class="mode-btn active" data-mode="split_total">Split Total</button>
+        <button class="mode-btn" data-mode="per_account">Each Account</button>
+        <button class="mode-btn" data-mode="drain">Drain Selected</button>
+      </div>
+
+      <div class="send-form">
+        <p id="mode-hint" style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+          Splits one total amount across your checked accounts and sends in parallel.
+        </p>
+
+        <div class="form-group">
+          <label>Target Recipient (@username or profile URL)</label>
+          <input type="text" id="target-input" placeholder="@recipient" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </div>
+
+        <div id="amount-group" class="form-group">
+          <label id="amount-label">Total Amount to Send (₦)</label>
+          <input type="text" id="amount-input" placeholder="e.g. 500B, 5T, 20T" autocomplete="off">
+          <div class="amount-chips">
+            <button type="button" class="chip" data-val="100B">100B</button>
+            <button type="button" class="chip" data-val="500B">500B</button>
+            <button type="button" class="chip" data-val="1T">1T</button>
+            <button type="button" class="chip" data-val="5T">5T</button>
+            <button type="button" class="chip" data-val="10T">10T</button>
+            <button type="button" class="chip" data-val="50T">50T</button>
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label>Schedule (Optional)</label>
+            <input type="datetime-local" id="schedule-input">
+          </div>
+          <div class="form-group">
+            <label>Global PIN Fallback (Optional)</label>
+            <input type="password" id="global-pin-input" placeholder="4-digit PIN" maxlength="8" autocomplete="off">
+          </div>
+        </div>
+
+        <button id="btn-launch-pipeline" type="button" class="btn btn-gold btn-full btn-large">
+          <span>Launch Parallel Pipeline</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Live Pipeline Queue -->
+    <section class="queue-section glass-card" style="margin-top:18px;">
+      <div class="queue-header">
+        <h3>Live Pipelines</h3>
+        <span id="active-badge" class="active-badge">0 Active</span>
+      </div>
+      <div id="jobs-list" class="jobs-list">
+        <div class="empty-state">
+          <div class="empty-icon">⚡</div>
+          <p>No active pipelines yet. Select accounts above and launch a transfer!</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Add Account Modal -->
+  <div id="add-account-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-card">
+      <div class="modal-header-row">
+        <h3>Add Sender Account</h3>
+        <button id="btn-close-add-modal" type="button" class="btn-dismiss-job">✕</button>
+      </div>
+      <div class="auth-tabs" style="margin-top:12px;">
+        <button class="auth-tab-btn active" data-auth="login">Credentials</button>
+        <button class="auth-tab-btn" data-auth="cookie">Session Cookie</button>
+      </div>
+
+      <div id="auth-tab-login" class="auth-tab-content active">
+        <div class="form-group">
+          <label>LagosLife Username</label>
+          <input type="text" id="login-username" placeholder="@username" autocomplete="off" autocapitalize="none">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label>Transaction PIN (Optional — saved for this preset)</label>
+          <input type="password" id="login-pin" placeholder="4-digit PIN" maxlength="8" autocomplete="off">
+        </div>
+        <button id="btn-submit-login" type="button" class="btn btn-gold btn-full">Connect & Save Preset</button>
+      </div>
+
+      <div id="auth-tab-cookie" class="auth-tab-content">
+        <div class="form-group">
+          <label>Paste Session Cookie</label>
+          <textarea id="cookie-input" rows="3" placeholder="ll_dev=...; ll_session=...; ll_pass=..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Transaction PIN (Optional)</label>
+          <input type="password" id="cookie-pin" placeholder="4-digit PIN" maxlength="8" autocomplete="off">
+        </div>
+        <button id="btn-submit-cookie" type="button" class="btn btn-gold btn-full">Import & Save Preset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2FA Login Modal -->
+  <div id="twofactor-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-card">
+      <h3>Two-Step Verification</h3>
+      <p id="twofactor-desc" style="font-size:13px; color:var(--text-secondary); margin:8px 0 14px;">Enter the 6-digit code from your authenticator app:</p>
+      <div class="form-group">
+        <input type="text" id="twofactor-code-input" placeholder="6-digit code" maxlength="10" inputmode="numeric" autocomplete="one-time-code" class="mono-input">
+      </div>
+      <div id="twofactor-resend-row" class="hidden" style="margin-bottom:10px;">
+        <button id="btn-twofactor-resend" type="button" class="btn btn-secondary btn-mini">Resend Email Code</button>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="btn-twofactor-cancel" type="button" class="btn btn-secondary" style="flex:1;">Cancel</button>
+        <button id="btn-twofactor-submit" type="button" class="btn btn-gold" style="flex:1;">Verify & Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Presets Backup / Export / Import Modal -->
+  <div id="backup-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-card">
+      <div class="modal-header-row">
+        <h3>Saved Presets Backup</h3>
+        <button id="btn-close-backup" type="button" class="btn-dismiss-job">✕</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-secondary); margin:8px 0 12px;">
+        Export your saved sender presets JSON to move them to another browser/phone, or paste JSON below to import.
+      </p>
+      <div class="form-group">
+        <textarea id="backup-json-box" rows="5" class="mono-input" placeholder='[{"user":"acct1","cookie":"...","pin":"1234"}]'></textarea>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="btn-copy-backup" type="button" class="btn btn-secondary" style="flex:1;">Copy JSON</button>
+        <button id="btn-import-backup" type="button" class="btn btn-gold" style="flex:1;">Import Presets</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VLC-Style Voluntary Donate Modal -->
+  <div id="donate-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-card">
+      <div class="modal-header-row">
+        <h3>Support HyperFlow 💛</h3>
+        <button id="btn-close-donate" type="button" class="btn-dismiss-job">✕</button>
+      </div>
+      <p style="font-size:13px; color:var(--text-secondary); margin:8px 0 14px;">
+        HyperFlow is <strong>100% free</strong> with zero hidden fees. If it saves you time, you can optionally tip <strong>@milespete</strong>!
+      </p>
+      <div class="form-group">
+        <label>Send Tip From Account</label>
+        <select id="donate-from-select" style="width:100%; padding:10px; border-radius:10px; border:1px solid var(--border-color);"></select>
+      </div>
+      <div class="form-group">
+        <label>Tip Amount (₦)</label>
+        <input type="text" id="donate-amount-input" placeholder="e.g. 50B, 100B, 1T">
+      </div>
+      <button id="btn-send-donate" type="button" class="btn btn-gold btn-full">Send Voluntary Tip to @milespete</button>
+    </div>
+  </div>
+
+  <script src="client.js?v=1.0"></script>
+</body>
+</html>
