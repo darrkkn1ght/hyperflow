@@ -174,7 +174,7 @@ async function resolveTarget(input, cookie) {
       const exact = list.find((p) => (p.username || "").toLowerCase().replace(/^@/, "") === clean);
       if (exact) return { id: exact.id, username: exact.username, name: exact.name };
     }
-  } catch {}
+  } catch { }
   return null;
 }
 
@@ -473,7 +473,7 @@ app.post("/api/vault/refresh", async (req, res) => {
         } else if (info.status === 401) {
           acc.status = "EXPIRED";
         }
-      } catch {}
+      } catch { }
     })
   );
   res.json({ accounts: [...ws.accounts.values()].map(serializeAccount) });
