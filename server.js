@@ -591,7 +591,18 @@ async function sendChunk(cookie, toId, amount, pin) {
     } else if (res.status === 429) {
       const prev = cookieBackoffs.get(key) || { consecutive429: 0, until: 0 };
       prev.consecutive429 += 1;
-      const waitMs = Math.min(2000 * prev.consecutive429, 15000);
+      let waitMs = 0;
+      const numeric = Number(data?.retryIn || data?.wait || data?.retryAfter || data?.cooldown || 0);
+      if (numeric > 0) {
+        waitMs = numeric < 120 ? numeric * 1000 : numeric;
+      } else {
+        const msg = String(data?.error || data?.message || "");
+        const secMatch = msg.match(/(\d+(?:\.\d+)?)\s*(?:s|sec)/i);
+        if (secMatch) waitMs = Math.ceil(parseFloat(secMatch[1]) * 1000);
+      }
+      if (!waitMs) {
+        waitMs = Math.min(2000 * prev.consecutive429, 15000);
+      }
       prev.until = Date.now() + waitMs;
       cookieBackoffs.set(key, prev);
       return { status: 429, data, waitMs };
