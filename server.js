@@ -610,28 +610,33 @@ function recordLaneTiming(job, lane) {
   updateMasterJobProgress(job);
 }
 
-async function sendChunk(cookie, toId, amount, pin) {
+async function sendChunk(cookie, toId, amount, pin, idempotencyKey) {
   const key = cookie.slice(0, 48);
   const b = cookieBackoffs.get(key);
   if (b && b.until > Date.now()) {
     await sleep(b.until - Date.now());
   }
-  const payload = { action: "send", to: toId, amount };
-  if (pin) payload.pin = pin;
+  const payload = { to: toId, amount };
+  if (pin && String(pin).trim()) payload.pin = String(pin).trim();
+
+  const headers = {
+    accept: "*/*",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    "content-type": "application/json",
+    origin: "https://lagoslife.app",
+    referer: "https://lagoslife.app/",
+    cookie,
+    "user-agent": UA
+  };
+  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
-    const res = await fetch("https://lagoslife.app/api/bank", {
+    const res = await fetch("https://lagoslife.app/api/send", {
       method: "POST",
-      headers: {
-        cookie,
-        "content-type": "application/json",
-        accept: "application/json",
-        origin: "https://lagoslife.app",
-        referer: "https://lagoslife.app/",
-        "user-agent": UA
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: ctrl.signal
     });
@@ -686,7 +691,8 @@ function runPipelineLane(job, lane, account) {
 
         const sendAmt = Math.min(lane.remaining, MAX_TRANSFER_CHUNK);
         const effectivePin = lane.pin || account.pin || job.globalPin || null;
-        const r = await sendChunk(account.cookie, job.target, sendAmt, effectivePin);
+        const idemKey = `${job.id}_${lane.uid}_${lane.txCount}`;
+        const r = await sendChunk(account.cookie, job.target, sendAmt, effectivePin, idemKey);
 
         if (r.status === 200) {
           lane.remaining = Math.max(0, lane.remaining - sendAmt);
@@ -747,6 +753,23 @@ function runPipelineLane(job, lane, account) {
           if (lower.includes("insufficient") || lower.includes("balance") || lower.includes("funds")) {
             lane.status = "FAILED";
             lane.logs.push(`Insufficient funds: ${errMsg}`);
+            job.logs.push(`[${new Date().toLocaleTimeString()}] ❌ @${lane.user}: ${errMsg}`);
+            updateMasterJobProgress(job);
+            return;
+          }
+
+          if (r.status === 401 || r.status === 403) {
+            account.status = "EXPIRED";
+            lane.status = "FAILED";
+            lane.logs.push(`Session expired (${r.status}): ${errMsg}`);
+            job.logs.push(`[${new Date().toLocaleTimeString()}] ❌ @${lane.user}: Session expired — re-login`);
+            updateMasterJobProgress(job);
+            return;
+          }
+
+          if (r.status === 400 || r.status === 404 || r.status === 422) {
+            lane.status = "FAILED";
+            lane.logs.push(`Rejected (${r.status}): ${errMsg}`);
             job.logs.push(`[${new Date().toLocaleTimeString()}] ❌ @${lane.user}: ${errMsg}`);
             updateMasterJobProgress(job);
             return;
