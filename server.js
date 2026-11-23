@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_TRANSFER_CHUNK = 100_000_000_000; // ₦100B LagosLife max per transfer
-const CHUNK_DELAY_MS = 250;
+const CHUNK_DELAY_MS = 30_500; // 30.5s per-sender transfer cooldown
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -622,7 +622,7 @@ function runPipelineLane(job, lane, account) {
   laneWorkers.set(workerKey, state);
   lane.status = "RUNNING";
   lane._lastChunkAt = Date.now();
-  lane.estimatedFinishAt = Date.now() + Math.max(0, lane.totalTxs - lane.txCount) * (lane.avgChunkMs || 700);
+  lane.estimatedFinishAt = Date.now() + Math.max(0, lane.totalTxs - lane.txCount) * (lane.avgChunkMs || (CHUNK_DELAY_MS + 450));
   updateMasterJobProgress(job);
 
   (async () => {
@@ -649,7 +649,12 @@ function runPipelineLane(job, lane, account) {
           if (job.logs.length > 60) job.logs.shift();
 
           if (lane.remaining > 0 && !state.cancelled) {
-            await sleep(CHUNK_DELAY_MS);
+            let waited = 0;
+            while (waited < CHUNK_DELAY_MS && !state.cancelled && !state.paused) {
+              const step = Math.min(500, CHUNK_DELAY_MS - waited);
+              await sleep(step);
+              waited += step;
+            }
           }
         } else if (r.status === 429) {
           lane.logs.push(`Rate limited — cooling down ${Math.ceil((r.waitMs || 3000) / 1000)}s`);
@@ -853,7 +858,7 @@ app.post("/api/pipeline/send", async (req, res) => {
       needsTwoStep: false,
       twoStepType: null,
       avgChunkMs: null,
-      estimatedFinishAt: isScheduled ? scheduledTimestamp + totalTxs * 700 : Date.now() + totalTxs * 700,
+      estimatedFinishAt: isScheduled ? scheduledTimestamp + totalTxs * (CHUNK_DELAY_MS + 450) : Date.now() + totalTxs * (CHUNK_DELAY_MS + 450),
       finishedAt: null,
       logs: [`Queued ₦${amt.toLocaleString()} (${totalTxs} chunks)`]
     };
