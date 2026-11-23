@@ -103,6 +103,73 @@ function formatJobEta(j) {
   return `⏱️ ETA: ~${formatDurationShort(remMs)} left (finishes ~${fin.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`;
 }
 
+function parseAmountClient(raw) {
+  const cleaned = String(raw || "").trim().toLowerCase().replace(/[₦,\s]/g, "");
+  const m = cleaned.match(/^(\d+(?:\.\d+)?)([kmbtq]?)$/);
+  if (!m) return 0;
+  const num = Number(m[1]);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  const mult = { "": 1, k: 1e3, m: 1e6, b: 1e9, t: 1e12, q: 1e15 };
+  return Math.floor(num * (mult[m[2]] || 1));
+}
+
+function updateThroughputAndPreflight() {
+  const selected = accounts.filter((a) => selectedUids.has(a.uid) && a.status !== "EXPIRED");
+  const n = selected.length;
+  const strip = $("throughput-badge");
+  if (strip) {
+    strip.textContent = n > 0
+      ? `⚡ ${n}× Parallel Speed · Up to ${fmtMoney(n * 100e9)} / 30.5s`
+      : "⚡ 0× Speed · 30.5s cooldown per lane";
+  }
+
+  const pf = $("preflight-preview");
+  if (!pf) return;
+  if (n === 0) {
+    pf.className = "hf-preflight";
+    pf.textContent = "Select at least 1 sender account to preview speed & ETA.";
+    return;
+  }
+
+  const rawAmt = $("amount-input")?.value || "";
+  const amt = parseAmountClient(rawAmt);
+  let totalToSend = 0;
+  let maxChunksOnOneLane = 0;
+
+  if (activeMode === "drain") {
+    totalToSend = selected.reduce((s, a) => s + Math.floor(a.money || 0), 0);
+    maxChunksOnOneLane = Math.max(...selected.map((a) => Math.ceil(Math.floor(a.money || 0) / 100e9)), 0);
+  } else if (activeMode === "per_account") {
+    if (amt <= 0) {
+      pf.className = "hf-preflight";
+      pf.textContent = `Enter an amount per account (${n} selected).`;
+      return;
+    }
+    const eligible = selected.filter((a) => Number(a.money || 0) >= amt);
+    totalToSend = eligible.length * amt;
+    maxChunksOnOneLane = Math.ceil(amt / 100e9);
+  } else {
+    if (amt <= 0) {
+      pf.className = "hf-preflight";
+      pf.textContent = `Enter total amount to split across ${n} selected account(s).`;
+      return;
+    }
+    totalToSend = amt;
+    maxChunksOnOneLane = Math.ceil(Math.ceil(amt / n) / 100e9);
+  }
+
+  if (totalToSend <= 0 || maxChunksOnOneLane <= 0) {
+    pf.className = "hf-preflight";
+    pf.textContent = "Selected accounts have insufficient balance for this configuration.";
+    return;
+  }
+
+  const estMs = Math.max(1, maxChunksOnOneLane - 1) * 30950 + 700;
+  const fin = new Date(Date.now() + estMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  pf.className = "hf-preflight ready";
+  pf.textContent = `⚡ ${n} lane(s) · ${fmtMoney(totalToSend)} total · Est. ${formatDurationShort(estMs)} (finishes ~${fin})`;
+}
+
 // ---------------------------------------------------------------------------
 // Render Fleet & Summary
 // ---------------------------------------------------------------------------
@@ -154,8 +221,8 @@ function renderFleet() {
           </label>
           <div class="fleet-right">
             <span class="fleet-bal">${fmtMoney(a.money)}</span>
-            <button type="button" class="btn btn-secondary btn-mini" onclick="promptAccountPin('${a.uid}')">PIN</button>
-            <button type="button" class="btn-dismiss-job" onclick="removeAccount('${a.uid}')" title="Remove preset">✕</button>
+            <button type="button" class="hf-btn hf-btn-xs" onclick="promptAccountPin('${a.uid}')">PIN</button>
+            <button type="button" class="hf-icon-btn" onclick="removeAccount('${a.uid}')" title="Remove preset">✕</button>
           </div>
         </div>
       `;
@@ -171,6 +238,7 @@ function renderFleet() {
       renderFleet();
     });
   });
+  updateThroughputAndPreflight();
 }
 
 window.promptAccountPin = async (uid) => {
@@ -360,6 +428,19 @@ async function restorePresetsOnBoot() {
 // Event Wiring
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
+  // Theme Toggle (Light / Obsidian Dark)
+  const savedTheme = localStorage.getItem("hyperflow_theme") || "light";
+  document.documentElement.setAttribute("data-theme", savedTheme);
+  $("btn-theme-toggle").textContent = savedTheme === "dark" ? "☀️ Light" : "🌙 Dark";
+  $("btn-theme-toggle").addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("hyperflow_theme", next);
+    $("btn-theme-toggle").textContent = next === "dark" ? "☀️ Light" : "🌙 Dark";
+  });
+
+  $("amount-input").addEventListener("input", updateThroughputAndPreflight);
+
   await restorePresetsOnBoot();
   await refreshStatus();
   setInterval(refreshStatus, 1500);
@@ -379,12 +460,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       $("amount-group").classList.toggle("hidden", activeMode === "drain");
       $("amount-label").textContent =
         activeMode === "per_account" ? "Amount Per Selected Account (₦)" : "Total Amount to Send (₦)";
+      updateThroughputAndPreflight();
     });
   });
 
   document.querySelectorAll(".chip").forEach((c) => {
     c.addEventListener("click", () => {
       $("amount-input").value = c.dataset.val;
+      updateThroughputAndPreflight();
     });
   });
 
@@ -509,6 +592,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       showToast(`Imported @${r.data.account.user}!`, "success");
     } else {
       showToast(r.data.error || "Invalid cookie.", "error");
+    }
+  });
+
+  $("btn-submit-bulk-cookie").addEventListener("click", async () => {
+    const cookies = $("bulk-cookie-input").value.trim();
+    const pin = $("bulk-cookie-pin").value.trim();
+    if (!cookies) return showToast("Paste cookies (one per line).", "error");
+    const r = await api("/api/vault/import-bulk", {
+      method: "POST",
+      body: JSON.stringify({ cookies, pin })
+    });
+    if (r.ok) {
+      accounts = r.data.accounts || [];
+      accounts.forEach((a) => selectedUids.add(a.uid));
+      saveSelectedUids();
+      syncPresetsFromAccounts(accounts);
+      renderFleet();
+      $("bulk-cookie-input").value = "";
+      $("bulk-cookie-pin").value = "";
+      $("add-account-modal").classList.add("hidden");
+      showToast(`Imported ${r.data.imported} account(s)${r.data.failed ? ` (${r.data.failed} invalid)` : ""}!`, "success");
+    } else {
+      showToast(r.data.error || "Bulk import failed.", "error");
     }
   });
 

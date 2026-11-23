@@ -381,6 +381,57 @@ app.post("/api/vault/import-cookie", async (req, res) => {
   }
 });
 
+app.post("/api/vault/import-bulk", async (req, res) => {
+  const rawToken = req.headers["x-client-token"] || req.body?.token || null;
+  const { cookies, pin } = req.body || {};
+  const lines = String(cookies || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return res.status(400).json({ error: "Paste at least one session cookie (one per line)." });
+  }
+
+  const ws = getOrCreateWorkspace(rawToken);
+  let imported = 0;
+  let failed = 0;
+
+  await Promise.all(
+    lines.map(async (cookieStr) => {
+      try {
+        const info = await fetchAccountIdentityAndBalance(cookieStr);
+        if (!info.ok) {
+          failed++;
+          return;
+        }
+        const account = {
+          uid: info.uid,
+          user: info.user,
+          name: info.name,
+          money: info.money,
+          cookie: cookieStr,
+          pin: pin ? String(pin).trim() : (ws.accounts.get(info.uid)?.pin || null),
+          twoStepCode: null,
+          status: "ACTIVE",
+          lastSyncedAt: Date.now()
+        };
+        ws.accounts.set(account.uid, account);
+        imported++;
+      } catch {
+        failed++;
+      }
+    })
+  );
+
+  res.json({
+    success: true,
+    token: ws.token,
+    imported,
+    failed,
+    accounts: [...ws.accounts.values()].map(serializeAccount)
+  });
+});
+
 app.post("/api/vault/restore", async (req, res) => {
   const rawToken = req.headers["x-client-token"] || req.body?.token || null;
   const { presets } = req.body || {};
