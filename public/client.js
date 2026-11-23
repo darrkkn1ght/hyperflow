@@ -23,6 +23,17 @@ function fmtMoney(n) {
   return `₦${Math.floor(v).toLocaleString()}`;
 }
 
+function openModal(id) {
+  $(id)?.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeModal(id) {
+  $(id)?.classList.add("hidden");
+  const anyOpen = document.querySelectorAll(".modal-overlay:not(.hidden)").length > 0;
+  if (!anyOpen) document.body.classList.remove("modal-open");
+}
+
 function showToast(msg, type = "info") {
   const c = $("toast-container");
   if (!c) return;
@@ -498,8 +509,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Add Account Modal
-  $("btn-open-add-account").addEventListener("click", () => $("add-account-modal").classList.remove("hidden"));
-  $("btn-close-add-modal").addEventListener("click", () => $("add-account-modal").classList.add("hidden"));
+  $("btn-open-add-account").addEventListener("click", () => openModal("add-account-modal"));
+  $("btn-close-add-modal").addEventListener("click", () => closeModal("add-account-modal"));
   document.querySelectorAll("#add-account-modal .auth-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#add-account-modal .auth-tab-btn").forEach((b) => b.classList.remove("active"));
@@ -520,14 +531,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     if (r.data.twoFactorRequired) {
       currentChallenge = r.data.challenge;
-      $("add-account-modal").classList.add("hidden");
+      closeModal("add-account-modal");
       $("twofactor-desc").textContent =
         r.data.method === "email"
           ? `Enter the 6-digit code emailed to ${r.data.to || "your email"}:`
           : "Type the 6-digit code from your authenticator app:";
       $("twofactor-resend-row").classList.toggle("hidden", r.data.method !== "email");
       $("twofactor-code-input").value = "";
-      $("twofactor-modal").classList.remove("hidden");
+      openModal("twofactor-modal");
       return;
     }
     if (r.ok && r.data.account) {
@@ -539,14 +550,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       $("login-username").value = "";
       $("login-password").value = "";
       $("login-pin").value = "";
-      $("add-account-modal").classList.add("hidden");
+      closeModal("add-account-modal");
       showToast(`Added @${r.data.account.user} to pipeline!`, "success");
     } else {
       showToast(r.data.error || "Login failed.", "error");
     }
   });
 
-  $("btn-twofactor-cancel").addEventListener("click", () => $("twofactor-modal").classList.add("hidden"));
+  $("btn-twofactor-cancel").addEventListener("click", () => closeModal("twofactor-modal"));
   $("btn-twofactor-resend").addEventListener("click", async () => {
     if (!currentChallenge) return;
     await api("/api/vault/2fa/resend", { method: "POST", body: JSON.stringify({ challenge: currentChallenge }) });
@@ -565,7 +576,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       saveSelectedUids();
       syncPresetsFromAccounts(accounts);
       renderFleet();
-      $("twofactor-modal").classList.add("hidden");
+      closeModal("twofactor-modal");
       showToast(`Added @${r.data.account.user} to pipeline!`, "success");
     } else {
       showToast(r.data.error || "Invalid 2FA code.", "error");
@@ -588,7 +599,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderFleet();
       $("cookie-input").value = "";
       $("cookie-pin").value = "";
-      $("add-account-modal").classList.add("hidden");
+      closeModal("add-account-modal");
       showToast(`Imported @${r.data.account.user}!`, "success");
     } else {
       showToast(r.data.error || "Invalid cookie.", "error");
@@ -611,7 +622,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderFleet();
       $("bulk-cookie-input").value = "";
       $("bulk-cookie-pin").value = "";
-      $("add-account-modal").classList.add("hidden");
+      closeModal("add-account-modal");
       showToast(`Imported ${r.data.imported} account(s)${r.data.failed ? ` (${r.data.failed} invalid)` : ""}!`, "success");
     } else {
       showToast(r.data.error || "Bulk import failed.", "error");
@@ -645,9 +656,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Presets Export/Import
   $("btn-vault-backup").addEventListener("click", () => {
     $("backup-json-box").value = JSON.stringify(loadSavedPresets(), null, 2);
-    $("backup-modal").classList.remove("hidden");
+    openModal("backup-modal");
   });
-  $("btn-close-backup").addEventListener("click", () => $("backup-modal").classList.add("hidden"));
+  $("btn-close-backup").addEventListener("click", () => closeModal("backup-modal"));
   $("btn-copy-backup").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("backup-json-box").value);
     showToast("Presets JSON copied!", "success");
@@ -657,7 +668,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const parsed = JSON.parse($("backup-json-box").value);
       if (!Array.isArray(parsed)) throw new Error("Must be a JSON array");
       localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(parsed));
-      $("backup-modal").classList.add("hidden");
+      closeModal("backup-modal");
       await restorePresetsOnBoot();
     } catch (e) {
       showToast("Invalid JSON: " + e.message, "error");
@@ -670,9 +681,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     sel.innerHTML = accounts
       .map((a) => `<option value="${a.uid}">@${a.user} (${fmtMoney(a.money)})</option>`)
       .join("");
-    $("donate-modal").classList.remove("hidden");
+    openModal("donate-modal");
   });
-  $("btn-close-donate").addEventListener("click", () => $("donate-modal").classList.add("hidden"));
+  $("btn-close-donate").addEventListener("click", () => closeModal("donate-modal"));
   $("btn-send-donate").addEventListener("click", async () => {
     const uid = $("donate-from-select").value;
     const amount = $("donate-amount-input").value.trim();
@@ -682,7 +693,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       body: JSON.stringify({ senderUids: [uid], to: "milespete", mode: "split_total", amount })
     });
     if (r.ok) {
-      $("donate-modal").classList.add("hidden");
+      closeModal("donate-modal");
       showToast("Thank you for supporting HyperFlow! 💛", "success");
       await refreshStatus();
     } else {
